@@ -7,10 +7,12 @@ use bsp::{
 };
 use defmt::*;
 use defmt_rtt as _;
-use embedded_hal::digital::v2::OutputPin;
+use embedded_hal::digital::v2::{InputPin, OutputPin};
+use embedded_hal::timer::CountDown;
+use fugit::{Duration, ExtU32};
 use panic_probe as _;
 
-use rp2040_project_template::GameState;
+use rp2040_project_template::{Direction, GameState, Player};
 use rp_pico as bsp;
 
 use bsp::hal::{
@@ -66,14 +68,39 @@ fn main() -> ! {
 
     let mut game_state = GameState::new(&mut ring_oscillator);
 
+    let button_a = pins.gpio6.into_pull_up_input();
+    let button_b = pins.gpio7.into_pull_up_input();
+    let button_c = pins.gpio8.into_pull_up_input();
+    let button_d = pins.gpio9.into_pull_up_input();
+
     loop {
         match game_state.player {
-            rp2040_project_template::Player::P1 => info!("1"),
-            rp2040_project_template::Player::P2 => info!("2"),
+            rp2040_project_template::Player::P1 => info!("driver - player 1"),
+            rp2040_project_template::Player::P2 => info!("driver - player 2"),
         }
-        ws.write(brightness(game_state.leds().into_iter(), 10))
+
+        let timeout = game_state.tick(&mut ring_oscillator);
+        ws.write(brightness(game_state.leds().into_iter(), 255))
             .unwrap();
-        game_state.tick(&mut ring_oscillator);
-        delay.delay_ms(1000);
+        let mut count_down = timer.count_down();
+        count_down.start(timeout * 1.millis());
+        while !count_down.wait().is_ok() {
+            if button_a.is_low().unwrap() {
+                info!("a"); // 2 left
+                game_state.button_push(Player::P2, Direction::CCW);
+            }
+            if button_b.is_low().unwrap() {
+                info!("b"); // 1 left
+                game_state.button_push(Player::P1, Direction::CCW);
+            }
+            if button_c.is_low().unwrap() {
+                info!("c"); // 1 right
+                game_state.button_push(Player::P1, Direction::CW);
+            }
+            if button_d.is_low().unwrap() {
+                info!("d"); // 2 right
+                game_state.button_push(Player::P2, Direction::CW);
+            }
+        }
     }
 }
